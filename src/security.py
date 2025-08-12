@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from dotenv import load_dotenv
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_user_by_login
 
@@ -33,8 +33,8 @@ def create_access_token(data: dict):
     return encoded_jwt
 
 
-async def authenticate_user(username: str, password: str, db: Session):
-    user = get_user_by_login(db, username)
+async def authenticate_user(username: str, password: str, db: AsyncSession):
+    user = await get_user_by_login(db, username)
     if not user:
         return False
     if not verify_password(password, user.hashed_password):

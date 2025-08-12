@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from pydantic import BaseModel
 
 
@@ -19,21 +17,10 @@ class UserResponse(BaseModel):
     login: str
     name: str
     balance: float
-    time_series: List[int]  # list of time series ids
+    time_series: list[int]  # list of time series ids
 
 
-class TimeSeriesData(BaseModel):
-    timestamp: str
-    value: float
-
-
-class TimeSeriesCreate(BaseModel):
-    data: List[TimeSeriesData]
-
-
-class TimeSeriesResponse(BaseModel):
+class TimeSeries(BaseModel):
     id: int
-    data: List[dict]
-
-    class Config:
-        from_attributes = True
+    user_id: int
+    data: list[float]

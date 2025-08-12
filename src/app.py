@@ -1,13 +1,14 @@
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from contracts import Token, UserRegistration, UserResponse
-from db import create_user, get_db, get_user_by_login
+from contracts import TimeSeries, Token, UserRegistration, UserResponse
+from db import create_user, get_db, get_user_by_login, init_db
 from security import (
     ALGORITHM,
     SECRET_KEY,
@@ -16,14 +17,21 @@ from security import (
     get_password_hash,
 )
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -38,7 +46,7 @@ async def get_current_user(
     except InvalidTokenError:
         raise credentials_exception
 
-    user = get_user_by_login(db, username)
+    user = await get_user_by_login(db, username)
     if user is None:
         raise credentials_exception
     return user
@@ -46,16 +54,16 @@ async def get_current_user(
 
 @app.post("/register", response_model=UserResponse)
 async def register_user(
-    user_data: UserRegistration, db: Annotated[Session, Depends(get_db)]
+    user_data: UserRegistration, db: Annotated[AsyncSession, Depends(get_db)]
 ):
-    existing_user = get_user_by_login(db, user_data.login)
+    existing_user = await get_user_by_login(db, user_data.login)
     if existing_user:
         raise HTTPException(
             status_code=400, detail="User with this login already exists."
         )
 
     hashed_password = get_password_hash(user_data.password)
-    db_user = create_user(
+    db_user = await create_user(
         db=db,
         login=user_data.login,
         hashed_password=hashed_password,
@@ -75,7 +83,7 @@ async def register_user(
 @app.post("/token")
 async def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Token:
     user = await authenticate_user(form_data.username, form_data.password, db)
     if not user:
@@ -86,11 +94,6 @@ async def login_for_access_token(
         )
     access_token = create_access_token(data={"sub": user.login})
     return Token(access_token=access_token, token_type="bearer")
-
-
-@app.get("/test_security")
-async def test_security(token: Annotated[str, Depends(oauth2_scheme)]):
-    return {"token": token}
 
 
 @app.get("/get_current_user_by_access_token", response_model=UserResponse)

@@ -1,29 +1,33 @@
-from sqlalchemy import JSON, Column, Float, ForeignKey, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy import JSON, Float, ForeignKey, Integer, String
+from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-Base = declarative_base()
+
+class Base(AsyncAttrs, DeclarativeBase):
+    __abstract__ = True
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    login = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-    balance = Column(Float, default=0.0)
+    login: Mapped[str] = mapped_column(String, unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String)
+    name: Mapped[str] = mapped_column(String)
+    balance: Mapped[float] = mapped_column(Float, default=0.0)
 
-    time_series = relationship("TimeSeries", back_populates="user")
+    time_series = relationship(
+        "TimeSeries",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class TimeSeries(Base):
     __tablename__ = "ts"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    data = Column(
-        JSON, nullable=False
-    )  # JSONB format: [{"timestamp": "2024-01-01", "value": 10.2}, ...]
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    data: Mapped[list[float]] = mapped_column(JSON)
 
     user = relationship("User", back_populates="time_series")
