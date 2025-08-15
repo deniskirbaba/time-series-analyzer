@@ -8,7 +8,7 @@ from jwt.exceptions import InvalidTokenError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contracts import TimeSeries, Token, UserRegistration, UserResponse
-from db import create_user, get_db, get_user_by_login, init_db
+from db import create_user, get_db, get_user_by_login, init_db, update_user_balance
 from security import (
     ALGORITHM,
     SECRET_KEY,
@@ -101,3 +101,25 @@ async def get_current_user_by_access_token(
     current_user: Annotated[UserResponse, Depends(get_current_user)],
 ):
     return current_user
+
+
+@app.post("/top_up_balance", response_model=UserResponse)
+async def top_up_balance(
+    amount: float,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+
+    updated_user = await update_user_balance(db, current_user.id, amount)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return UserResponse(
+        id=updated_user.id,
+        login=updated_user.login,
+        name=updated_user.name,
+        balance=updated_user.balance,
+        time_series=[ts.id for ts in updated_user.time_series],
+    )

@@ -74,3 +74,14 @@ async def create_time_series(
 async def get_time_series_by_id(db: AsyncSession, id: int) -> TimeSeries | None:
     result = await db.execute(select(TimeSeries).filter(TimeSeries.id == id))
     return result.scalar_one_or_none()
+
+
+async def update_user_balance(
+    db: AsyncSession, user_id: int, amount: float
+) -> User | None:
+    user = await get_user_by_id(db, user_id)
+    if user:
+        user.balance += amount
+        await db.commit()
+        await db.refresh(user)
+    return user
