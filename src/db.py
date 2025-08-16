@@ -61,10 +61,31 @@ async def create_user(
     return db_user
 
 
+async def update_user_balance(
+    db: AsyncSession, user_id: int, amount: float
+) -> User | None:
+    user = await get_user_by_id(db, user_id)
+    if user:
+        user.balance += amount
+        await db.commit()
+        await db.refresh(user)
+    return user
+
+
 async def create_time_series(
-    db: AsyncSession, user_id: int, data: list[float]
+    db: AsyncSession, user_id: int, name: str, data: list[float]
 ) -> TimeSeries:
-    db_ts = TimeSeries(user_id=user_id, data=data)
+    from datetime import datetime
+
+    db_ts = TimeSeries(
+        user_id=user_id,
+        name=name,
+        created_at=datetime.now().isoformat(),
+        length=len(data),
+        data=data,
+        analysis_results={},
+        forecasting_ts=[],
+    )
     db.add(db_ts)
     await db.commit()
     await db.refresh(db_ts)
@@ -76,12 +97,13 @@ async def get_time_series_by_id(db: AsyncSession, id: int) -> TimeSeries | None:
     return result.scalar_one_or_none()
 
 
-async def update_user_balance(
-    db: AsyncSession, user_id: int, amount: float
-) -> User | None:
-    user = await get_user_by_id(db, user_id)
-    if user:
-        user.balance += amount
+async def delete_time_series(db: AsyncSession, ts_id: int, user_id: int) -> bool:
+    result = await db.execute(
+        select(TimeSeries).filter(TimeSeries.id == ts_id, TimeSeries.user_id == user_id)
+    )
+    ts = result.scalar_one_or_none()
+    if ts:
+        await db.delete(ts)
         await db.commit()
-        await db.refresh(user)
-    return user
+        return True
+    return False

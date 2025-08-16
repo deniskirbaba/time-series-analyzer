@@ -20,7 +20,18 @@ class UserResponse(BaseModel):
     time_series: list[int]  # list of time series ids
 
 
-class TimeSeries(BaseModel):
-    id: int
+class TimeSeriesCreate(BaseModel):
+    name: str
     user_id: int
     data: list[float]
+
+
+class TimeSeriesResponse(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    created_at: str
+    length: int
+    data: list[float]
+    analysis_results: dict
+    forecasting_ts: list[int]

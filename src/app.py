@@ -7,8 +7,23 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from contracts import TimeSeries, Token, UserRegistration, UserResponse
-from db import create_user, get_db, get_user_by_login, init_db, update_user_balance
+from contracts import (
+    TimeSeriesCreate,
+    TimeSeriesResponse,
+    Token,
+    UserRegistration,
+    UserResponse,
+)
+from db import (
+    create_time_series,
+    create_user,
+    delete_time_series,
+    get_db,
+    get_time_series_by_id,
+    get_user_by_login,
+    init_db,
+    update_user_balance,
+)
 from security import (
     ALGORITHM,
     SECRET_KEY,
@@ -32,7 +47,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],
-):
+) -> UserResponse:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -49,7 +64,14 @@ async def get_current_user(
     user = await get_user_by_login(db, username)
     if user is None:
         raise credentials_exception
-    return user
+
+    return UserResponse(
+        id=user.id,
+        login=user.login,
+        name=user.name,
+        balance=user.balance,
+        time_series=[ts.id for ts in user.time_series],
+    )
 
 
 @app.post("/register", response_model=UserResponse)
@@ -123,3 +145,66 @@ async def top_up_balance(
         balance=updated_user.balance,
         time_series=[ts.id for ts in updated_user.time_series],
     )
+
+
+@app.post("/time_series", response_model=TimeSeriesResponse)
+async def create_time_series_endpoint(
+    ts_data: TimeSeriesCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if not ts_data.data:
+        raise HTTPException(status_code=400, detail="Data cannot be empty")
+
+    db_ts = await create_time_series(
+        db=db, user_id=ts_data.user_id, name=ts_data.name, data=ts_data.data
+    )
+
+    return TimeSeriesResponse(
+        id=db_ts.id,
+        user_id=db_ts.user_id,
+        name=db_ts.name,
+        created_at=db_ts.created_at,
+        length=db_ts.length,
+        data=db_ts.data,
+        analysis_results=db_ts.analysis_results,
+        forecasting_ts=db_ts.forecasting_ts,
+    )
+
+
+@app.get("/time_series/{ts_id}", response_model=TimeSeriesResponse)
+async def get_time_series_endpoint(
+    ts_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    db_ts = await get_time_series_by_id(db, ts_id)
+
+    if not db_ts:
+        raise HTTPException(status_code=404, detail="Time series not found")
+
+    return TimeSeriesResponse(
+        id=db_ts.id,
+        user_id=db_ts.user_id,
+        name=db_ts.name,
+        created_at=db_ts.created_at,
+        length=db_ts.length,
+        data=db_ts.data,
+        analysis_results=db_ts.analysis_results,
+        forecasting_ts=db_ts.forecasting_ts,
+    )
+
+
+@app.delete("/time_series/{ts_id}")
+async def delete_time_series_endpoint(
+    ts_id: int,
+    user_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    success = await delete_time_series(db, ts_id, user_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail="Time series not found or you don't have permission to delete it",
+        )
+
+    return {"message": "Time series deleted successfully"}
