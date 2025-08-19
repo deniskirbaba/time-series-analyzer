@@ -19,15 +19,15 @@ im_page = st.Page("im_page.py", title="Личный кабинет")
 
 pg = st.navigation({"Авторизация": [login_page, register_page], "Аккаунт": [im_page]})
 
-# Sidebar
 with st.sidebar:
     st.markdown("### Time Series Analyzer")
     st.markdown("Сервис для анализа и предсказания временных рядов")
 
     if st.session_state.authenticated and st.session_state.user_info:
         st.success("✅ Авторизован")
-        st.write(f"**Пользователь:** {st.session_state.user_info.get('name', 'N/A')}")
-        st.write(f"**Логин:** {st.session_state.user_info.get('login', 'N/A')}")
+        st.write(f"**Пользователь:** {st.session_state.user_info.get("name", "N/A")}")
+        st.write(f"**Логин:** {st.session_state.user_info.get("login", "N/A")}")
+        st.write(f"**Баланс:** {st.session_state.user_info.get("balance", "N/A")} ₽")
 
         if st.button("Выйти", use_container_width=True):
             st.session_state.authenticated = False

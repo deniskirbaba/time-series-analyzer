@@ -72,3 +72,50 @@ def top_up_balance(access_token: str, amount: float) -> dict | None:
             return None
     except requests.exceptions.RequestException:
         return None
+
+
+def get_time_series(access_token: str, ts_id: int) -> dict | None:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(
+            f"{BACKEND_URL}/time_series/{ts_id}",
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except requests.exceptions.RequestException:
+        return None
+
+
+def delete_time_series(access_token: str, ts_id: int, user_id: int) -> bool:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.delete(
+            f"{BACKEND_URL}/time_series/{ts_id}",
+            params={"user_id": user_id},
+            headers=headers,
+        )
+
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
+
+def create_time_series(access_token: str, ts_data: dict) -> dict | None:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.post(
+            f"{BACKEND_URL}/time_series",
+            json=ts_data,
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except requests.exceptions.RequestException:
+        return None

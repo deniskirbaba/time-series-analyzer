@@ -1,8 +1,20 @@
+import os
+import sys
+import tempfile
 from datetime import datetime
 
-from api_calls import get_user_info, top_up_balance
+from api_calls import (
+    create_time_series,
+    delete_time_series,
+    get_time_series,
+    get_user_info,
+    top_up_balance,
+)
 
 import streamlit as st
+
+sys.path.append("..")
+from ts.validate_series import TimeSeriesValidationError, validate_time_series
 
 st.markdown("# Личный кабинет")
 
@@ -107,14 +119,144 @@ else:
 
         st.markdown("---")
         st.subheader("Временные ряды")
-        time_series = user.get("time_series", [])
 
-        if time_series:
-            st.info(f"У вас есть {len(time_series)} временных рядов")
+        st.markdown("#### Загрузка временного ряда")
+        with st.expander("Требования к структуре временного ряда", expanded=False):
+            with open("../data/time_series_requirements.txt", "r") as f:
+                st.markdown(f.read())
 
-            with st.expander("Просмотреть ID временных рядов"):
-                for i, ts_id in enumerate(time_series, 1):
-                    st.write(f"{i}. Временной ряд ID: {ts_id}")
+        uploaded_file = st.file_uploader(
+            "Выберите CSV файл с временным рядом",
+            type=["csv"],
+            help="Загрузите CSV файл с временным рядом согласно требованиям выше",
+        )
+
+        if uploaded_file is not None:
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".csv") as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    tmp_file_path = tmp_file.name
+                    with st.spinner("Проверка временного ряда..."):
+                        validated_df = validate_time_series(tmp_file_path)
+                st.success("Временный ряд успешно загружен и проверен.")
+
+                st.markdown("**Предварительный просмотр данных:**")
+                st.dataframe(validated_df.head(5))
+                st.text(f"Количество наблюдений: {len(validated_df)}")
+
+                ts_name = st.text_input(
+                    "Название временного ряда",
+                    placeholder="Введите название для временного ряда",
+                )
+
+                if st.button("Сохранить временный ряд", type="primary"):
+                    if ts_name.strip():
+                        try:
+                            ts_data = {
+                                "name": ts_name.strip(),
+                                "user_id": user.get("id"),
+                                "data": validated_df["target"].tolist(),
+                            }
+                            with st.spinner("Сохранение временного ряда..."):
+                                result = create_time_series(
+                                    st.session_state.access_token, ts_data
+                                )
+                                if result:
+                                    st.success(
+                                        f"Временный ряд '{ts_name}' успешно сохранен."
+                                    )
+                                    updated_info = get_user_info(
+                                        st.session_state.access_token
+                                    )
+                                    if updated_info:
+                                        st.session_state.user_info = updated_info
+                                    st.rerun()
+                                else:
+                                    st.error("Ошибка при сохранении временного ряда.")
+                        except Exception as e:
+                            st.error(f"Ошибка при сохранении: {str(e)}.")
+                    else:
+                        st.error("Пожалуйста, введите название для временного ряда.")
+
+            except TimeSeriesValidationError as e:
+                st.error(f"Ошибка валидации: {str(e)}.")
+            except Exception as e:
+                st.error(f"Неожиданная ошибка: {str(e)}.")
+
+        st.markdown("---")
+        st.markdown("#### Мои временные ряды")
+        time_series_ids = user.get("time_series", [])
+
+        if time_series_ids:
+            st.info(f"Количество временных рядов: {len(time_series_ids)}")
+
+            for i, ts_id in enumerate(time_series_ids, 1):
+                with st.container():
+                    st.markdown(f"##### Временной ряд #{i}")
+
+                    ts_details = get_time_series(st.session_state.access_token, ts_id)
+
+                    if ts_details:
+                        size_bytes = (
+                            ts_details.get("length", 0) * 4
+                        )  # assuming that each value is in 32 bit
+                        size_mb = size_bytes / (1024 * 1024)
+
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Название", ts_details.get("name", "N/A"))
+                        with col2:
+                            st.metric("Длина", ts_details.get("length", 0))
+                        with col3:
+                            created_at = ts_details.get("created_at", "N/A")
+                            if created_at != "N/A":
+                                try:
+                                    dt = datetime.fromisoformat(
+                                        created_at.replace("Z", "+00:00")
+                                    )
+                                    formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+                                except:
+                                    formatted_date = created_at
+                            else:
+                                formatted_date = "N/A"
+                            st.metric("Создан", formatted_date)
+                        with col4:
+                            st.metric("Размер", f"{size_mb:.4f} MB")
+
+                        col1, col2, col3 = st.columns([1, 1, 2])
+                        with col1:
+                            if st.button(f"Исследовать", key=f"explore_{ts_id}"):
+                                st.info(
+                                    "Функция исследования временного ряда будет добавлена позже"
+                                )
+                        with col2:
+                            if st.button(
+                                f"Удалить", key=f"delete_{ts_id}", type="secondary"
+                            ):
+                                with st.spinner("Удаление временного ряда..."):
+                                    success = delete_time_series(
+                                        st.session_state.access_token,
+                                        ts_id,
+                                        user.get("id"),
+                                    )
+                                    if success:
+                                        st.success(
+                                            f"Временной ряд '{ts_details.get('name', 'N/A')}' успешно удален!"
+                                        )
+                                        updated_info = get_user_info(
+                                            st.session_state.access_token
+                                        )
+                                        if updated_info:
+                                            st.session_state.user_info = updated_info
+                                        st.rerun()
+                                    else:
+                                        st.error("Ошибка при удалении временного ряда")
+                    else:
+                        st.error(
+                            f"Не удалось загрузить информацию о временном ряду ID: {ts_id}"
+                        )
+
+                    st.markdown("---")
         else:
             st.info("У вас пока нет временных рядов")
 
