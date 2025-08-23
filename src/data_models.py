@@ -38,7 +38,7 @@ class TimeSeries(Base):
     user = relationship("User", back_populates="time_series")
 
 
-class Models(Base):
+class Model(Base):
     __tablename__ = "models"
 
     name: Mapped[str]

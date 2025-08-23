@@ -1,10 +1,12 @@
+import json
+from pathlib import Path
 from typing import AsyncGenerator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from data_models import Base, TimeSeries, User
+from data_models import Base, Model, TimeSeries, User
 
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -19,16 +21,11 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False, autoflush=False, bind=async_engine
 )
 
-_DB_INITIALIZED = False  # DB init flag
-
 
 async def init_db():
-    global _DB_INITIALIZED
-    if not _DB_INITIALIZED:
-        async with async_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
-        _DB_INITIALIZED = True
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -107,3 +104,22 @@ async def delete_time_series(db: AsyncSession, ts_id: int, user_id: int) -> bool
         await db.commit()
         return True
     return False
+
+
+async def populate_models(db: AsyncSession, json_path: str | Path):
+    with open(json_path, "r") as f:
+        data = json.load(f)
+
+    result = await db.execute(select(Model))
+    existing_models = result.scalars().all()
+    for model in existing_models:
+        await db.delete(model)
+
+    models = [Model(**model_data) for model_data in data.values()]
+    db.add_all(models)
+    await db.commit()
+
+
+async def get_model_by_name(db: AsyncSession, name: str):
+    result = await db.execute(select(Model).filter(Model.name == name))
+    return result.scalar_one_or_none()

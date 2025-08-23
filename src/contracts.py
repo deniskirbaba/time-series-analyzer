@@ -35,3 +35,9 @@ class TimeSeriesResponse(BaseModel):
     data: list[float]
     analysis_results: dict
     forecasting_ts: list[int]
+
+
+class ModelResponse(BaseModel):
+    name: str
+    info: str
+    tariffs: float

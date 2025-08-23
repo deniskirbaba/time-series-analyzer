@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 import jwt
@@ -8,6 +9,7 @@ from jwt.exceptions import InvalidTokenError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contracts import (
+    ModelResponse,
     TimeSeriesCreate,
     TimeSeriesResponse,
     Token,
@@ -15,13 +17,16 @@ from contracts import (
     UserResponse,
 )
 from db import (
+    AsyncSessionLocal,
     create_time_series,
     create_user,
     delete_time_series,
     get_db,
+    get_model_by_name,
     get_time_series_by_id,
     get_user_by_login,
     init_db,
+    populate_models,
     update_user_balance,
 )
 from security import (
@@ -36,6 +41,8 @@ from security import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    async with AsyncSessionLocal() as session:
+        await populate_models(session, Path("data/models_info.json"))
     yield
 
 
@@ -151,9 +158,11 @@ async def top_up_balance(
 async def create_time_series_endpoint(
     ts_data: TimeSeriesCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
 ):
     if not ts_data.data:
         raise HTTPException(status_code=400, detail="Data cannot be empty")
+    assert ts_data.user_id == current_user.id, "User ID does not match"
 
     db_ts = await create_time_series(
         db=db, user_id=ts_data.user_id, name=ts_data.name, data=ts_data.data
@@ -175,11 +184,13 @@ async def create_time_series_endpoint(
 async def get_time_series_endpoint(
     ts_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
 ):
     db_ts = await get_time_series_by_id(db, ts_id)
 
     if not db_ts:
         raise HTTPException(status_code=404, detail="Time series not found")
+    assert db_ts.user_id == current_user.id, "User ID does not match"
 
     return TimeSeriesResponse(
         id=db_ts.id,
@@ -198,6 +209,7 @@ async def delete_time_series_endpoint(
     ts_id: int,
     user_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[UserResponse, Depends(get_current_user)],
 ):
     success = await delete_time_series(db, ts_id, user_id)
 
@@ -208,3 +220,19 @@ async def delete_time_series_endpoint(
         )
 
     return {"message": "Time series deleted successfully"}
+
+
+@app.get("/models/{name}", response_model=ModelResponse)
+async def get_model_endpoint(
+    name: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[UserResponse, Depends(get_current_user)],
+):
+    db_model = await get_model_by_name(db, name)
+
+    if not db_model:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    return ModelResponse(
+        name=db_model.name, info=db_model.info, tariffs=db_model.tariffs
+    )
