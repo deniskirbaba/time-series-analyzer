@@ -3,7 +3,7 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from api_calls import get_model, get_time_series
+from api_calls import get_all_models, get_time_series
 
 import streamlit as st
 
@@ -125,3 +125,25 @@ else:
 
 st.markdown("---")
 st.subheader("Прогнозирование")
+
+with st.expander("Информация о прогнозировании", expanded=False):
+    with open("../data/time_series_forecasting_info.txt", "r") as f:
+        st.markdown(f.read())
+with st.expander("Доступные модели и тарифы", expanded=False):
+    models_data = get_all_models(st.session_state.access_token)
+    if models_data:
+        for i, model in enumerate(models_data):
+            if i != 0:
+                st.markdown("---")
+            st.markdown(f"##### {model['name']}")
+            st.markdown(f"**Описание:** {model['info']}")
+            st.markdown(f"**Тариф:** {model['tariffs']} ₽ за точку")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("FH=10", f"{model['tariffs'] * 10:.2f} ₽")
+            with col2:
+                st.metric("FH=25", f"{model['tariffs'] * 25:.2f} ₽")
+            with col3:
+                st.metric("FH=50", f"{model['tariffs'] * 50:.2f} ₽")
+    else:
+        st.error("Не удалось загрузить информацию о моделях")

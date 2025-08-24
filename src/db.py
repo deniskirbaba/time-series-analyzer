@@ -120,6 +120,6 @@ async def populate_models(db: AsyncSession, json_path: str | Path):
     await db.commit()
 
 
-async def get_model_by_name(db: AsyncSession, name: str):
-    result = await db.execute(select(Model).filter(Model.name == name))
-    return result.scalar_one_or_none()
+async def get_all_models(db: AsyncSession) -> list[Model]:
+    result = await db.execute(select(Model))
+    return result.scalars().all()

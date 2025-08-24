@@ -22,7 +22,6 @@ from db import (
     create_user,
     delete_time_series,
     get_db,
-    get_model_by_name,
     get_time_series_by_id,
     get_user_by_login,
     init_db,
@@ -222,17 +221,16 @@ async def delete_time_series_endpoint(
     return {"message": "Time series deleted successfully"}
 
 
-@app.get("/models/{name}", response_model=ModelResponse)
-async def get_model_endpoint(
-    name: str,
+@app.get("/models", response_model=list[ModelResponse])
+async def get_all_models_endpoint(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[UserResponse, Depends(get_current_user)],
 ):
-    db_model = await get_model_by_name(db, name)
+    from db import get_all_models
 
-    if not db_model:
-        raise HTTPException(status_code=404, detail="Model not found")
+    db_models = await get_all_models(db)
 
-    return ModelResponse(
-        name=db_model.name, info=db_model.info, tariffs=db_model.tariffs
-    )
+    return [
+        ModelResponse(name=model.name, info=model.info, tariffs=model.tariffs)
+        for model in db_models
+    ]

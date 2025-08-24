@@ -90,6 +90,22 @@ def get_time_series(access_token: str, ts_id: int) -> dict | None:
         return None
 
 
+def get_all_models(access_token: str) -> list[dict] | None:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(
+            f"{BACKEND_URL}/models",
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except requests.exceptions.RequestException:
+        return None
+
+
 def delete_time_series(access_token: str, ts_id: int, user_id: int) -> bool:
     try:
         headers = {"Authorization": f"Bearer {access_token}"}
