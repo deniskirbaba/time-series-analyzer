@@ -16,8 +16,15 @@ if "user_info" not in st.session_state:
 login_page = st.Page("login_page.py", title="Вход")
 register_page = st.Page("register_page.py", title="Регистрация")
 im_page = st.Page("im_page.py", title="Личный кабинет")
+ts_page = st.Page("ts_page.py", title="Анализ/Предсказание")
 
-pg = st.navigation({"Авторизация": [login_page, register_page], "Аккаунт": [im_page]})
+pg = st.navigation(
+    {
+        "Авторизация": [login_page, register_page],
+        "Аккаунт": [im_page],
+        "Временные ряды": [ts_page],
+    }
+)
 
 with st.sidebar:
     st.markdown("### Time Series Analyzer")
