@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from sklearn.linear_model import LinearRegression
 from statsforecast.models import (
     AutoARIMA,
@@ -23,11 +22,16 @@ class LinearTrendModel:
 
 
 NAIVE_MODELS = {"historic_average": HistoricAverage, "linear_trend": LinearTrendModel}
-STATS_MODELS = {"arima": AutoARIMA, "ets": AutoETS, "tbats": AutoTBATS, "theta": AutoTheta}
+STATS_MODELS = {
+    "arima": AutoARIMA,
+    "ets": AutoETS,
+    "tbats": AutoTBATS,
+    "theta": AutoTheta,
+}
 ALL_MODELS = {**NAIVE_MODELS, **STATS_MODELS}
 
 
-def train_model(model_name: str, series: pd.DataFrame):
+def train_model(model_name: str, series: list[float]):
     if model_name not in ALL_MODELS:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -36,7 +40,7 @@ def train_model(model_name: str, series: pd.DataFrame):
         model = model_class(season_length=[7, 30, 120, 365])
     else:
         model = model_class()
-    model.fit(series["target"].values)
+    model.fit(np.array(series))
 
     return model
 

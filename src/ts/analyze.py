@@ -66,12 +66,12 @@ def get_smoothed_series(series: pd.Series) -> dict:
     return {"smoothed_series": smoothed.tolist()}
 
 
-def analyze_time_series(series: pd.DataFrame) -> dict:
+def analyze_time_series(series: list[float]) -> dict:
     """
     Полный анализ временного ряда.
     """
     try:
-        series = series["target"]
+        series = pd.Series(series)
 
         results = {}
         results.update(get_simple_stats(series))
