@@ -41,3 +41,13 @@ class ModelResponse(BaseModel):
     name: str
     info: str
     tariffs: float
+
+
+class TaskResponse(BaseModel):
+    user_id: int
+    ts_id: int
+    cost: float
+    type: str
+    params: str
+    status: str
+    updated_at: str

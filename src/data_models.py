@@ -44,3 +44,15 @@ class Model(Base):
     name: Mapped[str]
     info: Mapped[str]
     tariffs: Mapped[float]
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    ts_id: Mapped[int] = mapped_column(ForeignKey("ts.id"))
+    cost: Mapped[float]
+    type: Mapped[str]
+    params: Mapped[str]
+    status: Mapped[str]
+    updated_at: Mapped[str]
