@@ -1,15 +1,21 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
 import jwt
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
+from redis import Redis
+from rq import Queue
+from rq.job import Job
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contracts import (
     ModelResponse,
+    TaskResponse,
     TimeSeriesCreate,
     TimeSeriesResponse,
     Token,
@@ -18,14 +24,20 @@ from contracts import (
 )
 from db import (
     AsyncSessionLocal,
+    create_task,
     create_time_series,
     create_user,
     delete_time_series,
+    get_all_models,
     get_db,
+    get_task_by_task_id,
+    get_tasks_for_user,
     get_time_series_by_id,
     get_user_by_login,
     init_db,
     populate_models,
+    update_analysis_results,
+    update_task_by_task_id,
     update_user_balance,
 )
 from security import (
@@ -35,6 +47,14 @@ from security import (
     create_access_token,
     get_password_hash,
 )
+from tasks import task_analyze_time_series
+
+load_dotenv()
+
+redis_conn = Redis(
+    host=os.getenv("REDIS_HOST"), port=int(os.getenv("REDIS_PORT")), db=0
+)
+queue = Queue("default", connection=redis_conn)
 
 
 @asynccontextmanager
@@ -226,11 +246,179 @@ async def get_all_models_endpoint(
     db: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[UserResponse, Depends(get_current_user)],
 ):
-    from db import get_all_models
-
     db_models = await get_all_models(db)
 
     return [
         ModelResponse(name=model.name, info=model.info, tariffs=model.tariffs)
         for model in db_models
     ]
+
+
+@app.post("/analyze_time_series")
+async def analyze_time_series_endpoint(
+    ts_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    if ts_id not in user.time_series:
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to analyze this time series",
+        )
+
+    ts = await get_time_series_by_id(db, ts_id)
+    ts_data = [d for d in ts.data]  # to avoid lazy loading issues
+
+    if not ts:
+        raise HTTPException(status_code=404, detail="Time series not found")
+
+    task = await create_task(db, ts_id, user.id, 0, "analyze", "", "queued")
+
+    job = queue.enqueue(
+        task_analyze_time_series,
+        ts_data,
+        task.id,
+        job_timeout="10m",
+    )
+
+    job.meta["task_id"] = task.id
+    job.save_meta()
+
+    return {"message": "Task enqueued successfully"}
+
+
+@app.get("/tasks", response_model=list[TaskResponse])
+async def get_tasks_endpoint(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    tasks = await get_tasks_for_user(db, user.id)
+
+    return [
+        TaskResponse(
+            user_id=task.user_id,
+            ts_id=task.ts_id,
+            cost=task.cost,
+            type=task.type,
+            params=task.params,
+            status=task.status,
+            updated_at=task.updated_at,
+        )
+        for task in tasks
+    ]
+
+
+@app.post("/process_job_results")
+async def process_job_results_endpoint(
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Iterating through RQ jobs and update database accordingly.
+    This endpoint should be called periodically.
+    """
+    processed_count = 0
+
+    try:
+        started_jobs = queue.started_job_registry.get_job_ids()
+        for job_id in started_jobs:
+            try:
+                job = Job.fetch(job_id, connection=redis_conn)
+                if job.meta and "task_id" in job.meta:
+                    task_id = job.meta["task_id"]
+                    await update_task_by_task_id(db, task_id, "in_progress")
+                    processed_count += 1
+            except Exception as e:
+                print(f"Error processing started job {job_id}: {e}")
+                continue
+
+        finished_jobs = queue.finished_job_registry.get_job_ids()
+        for job_id in finished_jobs:
+            try:
+                job = Job.fetch(job_id, connection=redis_conn)
+
+                if job.is_finished and job.result:
+                    result = job.result
+
+                    if isinstance(result, dict) and "task_id" in result:
+                        task_id = result["task_id"]
+
+                        if result.get("success"):
+                            await update_task_by_task_id(db, task_id, "done")
+
+                            task = await get_task_by_task_id(db, task_id)
+                            if task and "results" in result:
+                                await update_analysis_results(
+                                    db, task.ts_id, result["results"]
+                                )
+                            processed_count += 1
+                        else:
+                            await update_task_by_task_id(db, task_id, "failed")
+                            processed_count += 1
+
+                queue.finished_job_registry.remove(job_id)
+
+            except Exception as e:
+                print(f"Error processing finished job {job_id}: {e}")
+                continue
+
+        failed_jobs = queue.failed_job_registry.get_job_ids()
+        for job_id in failed_jobs:
+            try:
+                job = Job.fetch(job_id, connection=redis_conn)
+
+                task_id = None
+                if (
+                    job.result
+                    and isinstance(job.result, dict)
+                    and "task_id" in job.result
+                ):
+                    task_id = job.result["task_id"]
+                elif job.meta and "task_id" in job.meta:
+                    task_id = job.meta["task_id"]
+
+                if task_id:
+                    await update_task_by_task_id(db, task_id, "failed")
+                    processed_count += 1
+
+                queue.failed_job_registry.remove(job_id)
+
+            except Exception as e:
+                print(f"Error processing failed job {job_id}: {e}")
+                continue
+
+        deferred_jobs = queue.deferred_job_registry.get_job_ids()
+        for job_id in deferred_jobs:
+            try:
+                job = Job.fetch(job_id, connection=redis_conn)
+
+                if job.meta and "task_id" in job.meta:
+                    task_id = job.meta["task_id"]
+                    await update_task_by_task_id(db, task_id, "failed")
+                    processed_count += 1
+
+                queue.deferred_job_registry.remove(job_id)
+
+            except Exception as e:
+                print(f"Error processing deferred job {job_id}: {e}")
+                continue
+
+        canceled_jobs = queue.canceled_job_registry.get_job_ids()
+        for job_id in canceled_jobs:
+            try:
+                job = Job.fetch(job_id, connection=redis_conn)
+
+                if job.meta and "task_id" in job.meta:
+                    task_id = job.meta["task_id"]
+                    await update_task_by_task_id(db, task_id, "failed")
+                    processed_count += 1
+
+                queue.canceled_job_registry.remove(job_id)
+
+            except Exception as e:
+                print(f"Error processing canceled job {job_id}: {e}")
+                continue
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing jobs: {e}")
+
+    return {"message": f"Processed {processed_count} jobs across all states"}

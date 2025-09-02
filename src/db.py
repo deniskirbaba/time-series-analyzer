@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -6,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from data_models import Base, Model, TimeSeries, User
+from data_models import Base, Model, Task, TimeSeries, User
 
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -72,7 +73,6 @@ async def update_user_balance(
 async def create_time_series(
     db: AsyncSession, user_id: int, name: str, data: list[float]
 ) -> TimeSeries:
-    from datetime import datetime
 
     db_ts = TimeSeries(
         user_id=user_id,
@@ -123,3 +123,52 @@ async def populate_models(db: AsyncSession, json_path: str | Path):
 async def get_all_models(db: AsyncSession) -> list[Model]:
     result = await db.execute(select(Model))
     return result.scalars().all()
+
+
+async def create_task(
+    db: AsyncSession,
+    ts_id: int,
+    user_id: int,
+    cost: float,
+    type: str,
+    params: str,
+    status: str,
+) -> Task:
+    db_task = Task(
+        ts_id=ts_id,
+        user_id=user_id,
+        cost=cost,
+        type=type,
+        params=params,
+        status=status,
+        updated_at=datetime.now().isoformat(),
+    )
+    db.add(db_task)
+    await db.commit()
+    await db.refresh(db_task)
+    return db_task
+
+
+async def get_tasks_for_user(db: AsyncSession, user_id: int) -> list[Task]:
+    result = await db.execute(select(Task).filter(Task.user_id == user_id))
+    return result.scalars().all()
+
+
+async def get_task_by_task_id(db: AsyncSession, task_id: int) -> Task | None:
+    result = await db.execute(select(Task).filter(Task.id == task_id))
+    return result.scalar_one_or_none()
+
+
+async def update_task_by_task_id(db: AsyncSession, task_id: int, status: str):
+    task = await db.get(Task, task_id)
+    if task:
+        task.status = status
+        task.updated_at = datetime.now().isoformat()
+        await db.commit()
+
+
+async def update_analysis_results(db: AsyncSession, ts_id: int, results: dict):
+    ts = await db.get(TimeSeries, ts_id)
+    if ts:
+        ts.analysis_results = results
+        await db.commit()
