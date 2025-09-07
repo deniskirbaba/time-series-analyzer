@@ -24,6 +24,8 @@ from contracts import (
 )
 from db import (
     AsyncSessionLocal,
+    add_forecast_ts_id,
+    create_forecast,
     create_task,
     create_time_series,
     create_user,
@@ -33,12 +35,14 @@ from db import (
     get_task_by_task_id,
     get_tasks_for_user,
     get_time_series_by_id,
+    get_user_balance,
     get_user_by_login,
     init_db,
     populate_models,
     update_analysis_results,
     update_task_by_task_id,
     update_user_balance,
+    withdraw_user_balance,
 )
 from security import (
     ALGORITHM,
@@ -47,7 +51,7 @@ from security import (
     create_access_token,
     get_password_hash,
 )
-from tasks import task_analyze_time_series
+from tasks import task_analyze_time_series, task_forecast_time_series
 
 load_dotenv()
 
@@ -282,6 +286,53 @@ async def analyze_time_series_endpoint(
     )
 
     job.meta["task_id"] = task.id
+    job.meta["cost"] = 0
+    job.save_meta()
+
+    return {"message": "Task enqueued successfully"}
+
+
+@app.post("/forecast_time_series")
+async def forecast_time_series_endpoint(
+    ts_id: int,
+    model: str,
+    fh: int,
+    cost: float,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    if ts_id not in user.time_series:
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to forecast this time series",
+        )
+
+    ts = await get_time_series_by_id(db, ts_id)
+    ts_data = [d for d in ts.data]  # to avoid lazy loading issues
+
+    if not ts:
+        raise HTTPException(status_code=404, detail="Time series not found")
+
+    res = await withdraw_user_balance(db, user.id, cost)
+    if res is None:
+        raise HTTPException(status_code=403, detail="Not enough balance")
+
+    task = await create_task(
+        db, ts_id, user.id, cost, "forecast", f"{model}__{fh}", "queued"
+    )
+
+    job = queue.enqueue(
+        task_forecast_time_series,
+        ts_data,
+        task.id,
+        model,
+        fh,
+        job_timeout="10m",
+    )
+
+    job.meta["task_id"] = task.id
+    job.meta["user_id"] = user.id
+    job.meta["cost"] = cost
     job.save_meta()
 
     return {"message": "Task enqueued successfully"}
@@ -347,13 +398,28 @@ async def process_job_results_endpoint(
 
                             task = await get_task_by_task_id(db, task_id)
                             if task and "results" in result:
-                                await update_analysis_results(
-                                    db, task.ts_id, result["results"]
-                                )
+                                if task.type == "analyze":
+                                    await update_analysis_results(
+                                        db, task.ts_id, result["results"]
+                                    )
+                                elif task.type == "forecast":
+                                    forecast_ts = await create_forecast(
+                                        db,
+                                        result["model"],
+                                        result["fh"],
+                                        result["results"],
+                                    )
+                                    await add_forecast_ts_id(
+                                        db, task.ts_id, forecast_ts.id
+                                    )
                             processed_count += 1
                         else:
                             await update_task_by_task_id(db, task_id, "failed")
                             processed_count += 1
+                            if job.meta["cost"] > 0:
+                                await update_user_balance(
+                                    db, job.meta["user_id"], job.meta["cost"]
+                                )
 
                 queue.finished_job_registry.remove(job_id)
 
@@ -380,6 +446,8 @@ async def process_job_results_endpoint(
                     await update_task_by_task_id(db, task_id, "failed")
                     processed_count += 1
 
+                if job.meta["cost"] > 0:
+                    await update_user_balance(db, job.meta["user_id"], job.meta["cost"])
                 queue.failed_job_registry.remove(job_id)
 
             except Exception as e:
@@ -396,6 +464,8 @@ async def process_job_results_endpoint(
                     await update_task_by_task_id(db, task_id, "failed")
                     processed_count += 1
 
+                if job.meta["cost"] > 0:
+                    await update_user_balance(db, job.meta["user_id"], job.meta["cost"])
                 queue.deferred_job_registry.remove(job_id)
 
             except Exception as e:
@@ -412,6 +482,8 @@ async def process_job_results_endpoint(
                     await update_task_by_task_id(db, task_id, "failed")
                     processed_count += 1
 
+                if job.meta["cost"] > 0:
+                    await update_user_balance(db, job.meta["user_id"], job.meta["cost"])
                 queue.canceled_job_registry.remove(job_id)
 
             except Exception as e:

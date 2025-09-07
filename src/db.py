@@ -5,9 +5,10 @@ from typing import AsyncGenerator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import StaticPool
 
-from data_models import Base, Model, Task, TimeSeries, User
+from data_models import Base, Forecast, Model, Task, TimeSeries, User
 
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -19,7 +20,7 @@ async_engine = create_async_engine(
 )
 
 AsyncSessionLocal = async_sessionmaker(
-    autocommit=False, autoflush=False, bind=async_engine
+    autocommit=False, autoflush=False, bind=async_engine, expire_on_commit=False
 )
 
 
@@ -70,6 +71,24 @@ async def update_user_balance(
     return user
 
 
+async def get_user_balance(db: AsyncSession, user_id: int) -> float:
+    user = await get_user_by_id(db, user_id)
+    return user.balance
+
+
+async def withdraw_user_balance(
+    db: AsyncSession, user_id: int, amount: float
+) -> User | None:
+    user = await get_user_by_id(db, user_id)
+    if user:
+        if user.balance < amount:
+            return None
+        user.balance -= amount
+        await db.commit()
+        await db.refresh(user)
+    return user
+
+
 async def create_time_series(
     db: AsyncSession, user_id: int, name: str, data: list[float]
 ) -> TimeSeries:
@@ -89,9 +108,9 @@ async def create_time_series(
     return db_ts
 
 
-async def get_time_series_by_id(db: AsyncSession, id: int) -> TimeSeries | None:
-    result = await db.execute(select(TimeSeries).filter(TimeSeries.id == id))
-    return result.scalar_one_or_none()
+async def get_time_series_by_id(db: AsyncSession, ts_id: int):
+    result = await db.execute(select(TimeSeries).where(TimeSeries.id == ts_id))
+    return result.scalars().first()
 
 
 async def delete_time_series(db: AsyncSession, ts_id: int, user_id: int) -> bool:
@@ -104,6 +123,17 @@ async def delete_time_series(db: AsyncSession, ts_id: int, user_id: int) -> bool
         await db.commit()
         return True
     return False
+
+
+async def add_forecast_ts_id(db: AsyncSession, ts_id: int, forecast_ts_id: int):
+    ts = await get_time_series_by_id(db, ts_id)
+
+    ts_for_ts = ts.forecasting_ts or []
+    ts_for_ts.append(forecast_ts_id)
+
+    ts.forecasting_ts = ts_for_ts
+    await db.commit()
+    await db.refresh(ts)
 
 
 async def populate_models(db: AsyncSession, json_path: str | Path):
@@ -172,3 +202,15 @@ async def update_analysis_results(db: AsyncSession, ts_id: int, results: dict):
     if ts:
         ts.analysis_results = results
         await db.commit()
+
+
+async def create_forecast(
+    db: AsyncSession, model: str, fh: int, data: list[float]
+) -> Forecast:
+    forecast = Forecast(
+        model=model, fh=fh, data=data, created_at=datetime.now().isoformat()
+    )
+    db.add(forecast)
+    await db.commit()
+    await db.refresh(forecast)
+    return forecast

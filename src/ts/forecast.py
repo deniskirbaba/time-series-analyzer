@@ -47,6 +47,7 @@ def train_model(model_name: str, series: list[float]):
 
 def forecast(model, horizon: int):
     if isinstance(model, tuple(ALL_MODELS.values())):
-        return model.predict(h=horizon)["mean"]
+        preds = model.predict(h=horizon)["mean"]
+        return preds if isinstance(preds, list) else preds.tolist()
     else:
         raise TypeError(f"Unknown model type: {type(model)}")

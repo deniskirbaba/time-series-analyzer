@@ -38,6 +38,15 @@ class TimeSeries(Base):
     user = relationship("User", back_populates="time_series")
 
 
+class Forecast(Base):
+    __tablename__ = "forecasts"
+
+    model: Mapped[str]
+    fh: Mapped[int]
+    data: Mapped[list[float]] = mapped_column(JSON)
+    created_at: Mapped[str]
+
+
 class Model(Base):
     __tablename__ = "models"
 
