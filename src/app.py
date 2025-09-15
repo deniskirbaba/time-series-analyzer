@@ -359,6 +359,41 @@ async def get_tasks_endpoint(
     ]
 
 
+@app.get("/analysis_task_status/{ts_id}")
+async def get_analysis_task_status(
+    ts_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    if ts_id not in user.time_series:
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to check this time series analysis status",
+        )
+
+    tasks = await get_tasks_for_user(db, user.id)
+    analysis_tasks = [
+        task for task in tasks if task.ts_id == ts_id and task.type == "analyze"
+    ]
+
+    if not analysis_tasks:
+        return {
+            "has_task": False,
+            "status": None,
+            "updated_at": None,
+            "can_start_analysis": True,
+        }
+
+    latest_task = max(analysis_tasks, key=lambda t: t.updated_at)
+
+    return {
+        "has_task": True,
+        "status": latest_task.status,
+        "updated_at": latest_task.updated_at,
+        "can_start_analysis": latest_task.status in ["done", "failed"],
+    }
+
+
 @app.post("/process_job_results")
 async def process_job_results_endpoint(
     db: Annotated[AsyncSession, Depends(get_db)],

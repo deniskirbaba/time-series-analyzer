@@ -135,3 +135,36 @@ def create_time_series(access_token: str, ts_data: dict) -> dict | None:
             return None
     except requests.exceptions.RequestException:
         return None
+
+
+def get_analysis_task_status(access_token: str, ts_id: int) -> dict | None:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(
+            f"{BACKEND_URL}/analysis_task_status/{ts_id}",
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except requests.exceptions.RequestException:
+        return None
+
+
+def start_analysis_task(access_token: str, ts_id: int) -> dict | None:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.post(
+            f"{BACKEND_URL}/analyze_time_series",
+            params={"ts_id": ts_id},
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except requests.exceptions.RequestException:
+        return None
