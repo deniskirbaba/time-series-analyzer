@@ -2,7 +2,7 @@ import pandas as pd
 
 EXPECTED_COLUMNS = {"index", "target"}
 MIN_OBSERVATIONS = 50
-MAX_OBSERVATIONS = 1_000_000
+MAX_OBSERVATIONS = 5_000
 
 
 class TimeSeriesValidationError(Exception):
@@ -23,7 +23,9 @@ def validate_time_series(file_path):
     if not pd.api.types.is_integer_dtype(df["index"]):
         raise TimeSeriesValidationError("'index' column must be of integer type.")
     if (df["index"] < 0).any():
-        raise TimeSeriesValidationError("'index' column must have only non-negative integers.")
+        raise TimeSeriesValidationError(
+            "'index' column must have only non-negative integers."
+        )
     if not df["index"].is_unique:
         raise TimeSeriesValidationError("'index' column must have unique values.")
     if not df["index"].is_monotonic_increasing:
@@ -32,7 +34,11 @@ def validate_time_series(file_path):
         raise TimeSeriesValidationError("'target' column must be numeric.")
     n_obs = len(df)
     if n_obs < MIN_OBSERVATIONS:
-        raise TimeSeriesValidationError(f"Time series must have at least {MIN_OBSERVATIONS} observations.")
+        raise TimeSeriesValidationError(
+            f"Time series must have at least {MIN_OBSERVATIONS} observations."
+        )
     if n_obs > MAX_OBSERVATIONS:
-        raise TimeSeriesValidationError(f"Time series must have at most {MAX_OBSERVATIONS:,} observations.")
+        raise TimeSeriesValidationError(
+            f"Time series must have at most {MAX_OBSERVATIONS:,} observations."
+        )
     return df
