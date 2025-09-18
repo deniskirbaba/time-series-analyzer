@@ -21,12 +21,12 @@ class LinearTrendModel:
         return {"mean": self.model.predict(future_idx.reshape(-1, 1))}
 
 
-NAIVE_MODELS = {"historic_average": HistoricAverage, "linear_trend": LinearTrendModel}
+NAIVE_MODELS = {"Среднее значение": HistoricAverage, "Линейный тренд": LinearTrendModel}
 STATS_MODELS = {
-    "arima": AutoARIMA,
-    "ets": AutoETS,
-    "tbats": AutoTBATS,
-    "theta": AutoTheta,
+    "ARIMA": AutoARIMA,
+    "ETS": AutoETS,
+    "TBATS": AutoTBATS,
+    "Theta": AutoTheta,
 }
 ALL_MODELS = {**NAIVE_MODELS, **STATS_MODELS}
 
