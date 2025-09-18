@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import attributes, selectinload
 from sqlalchemy.pool import StaticPool
 
 from data_models import Base, Forecast, Model, Task, TimeSeries, User
@@ -71,11 +71,6 @@ async def update_user_balance(
     return user
 
 
-async def get_user_balance(db: AsyncSession, user_id: int) -> float:
-    user = await get_user_by_id(db, user_id)
-    return user.balance
-
-
 async def withdraw_user_balance(
     db: AsyncSession, user_id: int, amount: float
 ) -> User | None:
@@ -131,7 +126,9 @@ async def add_forecast_ts_id(db: AsyncSession, ts_id: int, forecast_ts_id: int):
     ts_for_ts = ts.forecasting_ts or []
     ts_for_ts.append(forecast_ts_id)
 
-    ts.forecasting_ts = ts_for_ts
+    ts.forecasting_ts = ts_for_ts[:]  # Create a new list copy
+    attributes.flag_modified(ts, "forecasting_ts")
+
     await db.commit()
     await db.refresh(ts)
 
@@ -214,3 +211,8 @@ async def create_forecast(
     await db.commit()
     await db.refresh(forecast)
     return forecast
+
+
+async def get_forecast_by_id(db: AsyncSession, forecast_id: int) -> Forecast | None:
+    result = await db.execute(select(Forecast).filter(Forecast.id == forecast_id))
+    return result.scalar_one_or_none()

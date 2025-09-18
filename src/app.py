@@ -32,10 +32,10 @@ from db import (
     delete_time_series,
     get_all_models,
     get_db,
+    get_forecast_by_id,
     get_task_by_task_id,
     get_tasks_for_user,
     get_time_series_by_id,
-    get_user_balance,
     get_user_by_login,
     init_db,
     populate_models,
@@ -391,6 +391,88 @@ async def get_analysis_task_status(
         "status": latest_task.status,
         "updated_at": latest_task.updated_at,
         "can_start_analysis": latest_task.status in ["done", "failed"],
+    }
+
+
+@app.get("/forecast_task_status/{ts_id}")
+async def get_forecast_task_status(
+    ts_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    if ts_id not in user.time_series:
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have permission to check this time series forecast status",
+        )
+
+    tasks = await get_tasks_for_user(db, user.id)
+    forecast_tasks = [
+        task for task in tasks if task.ts_id == ts_id and task.type == "forecast"
+    ]
+
+    successful_tasks = [task for task in forecast_tasks if task.status == "done"]
+    failed_tasks = [task for task in forecast_tasks if task.status == "failed"]
+    in_progress_tasks = [
+        task for task in forecast_tasks if task.status in ["queued", "in_progress"]
+    ]
+
+    return {
+        "successful_predictions": [
+            {
+                "cost": task.cost,
+                "fh": int(task.params.split("__")[1]) if "__" in task.params else 0,
+                "model": (
+                    task.params.split("__")[0] if "__" in task.params else task.params
+                ),
+                "time": task.updated_at,
+                "task_id": task.id,
+            }
+            for task in successful_tasks
+        ],
+        "failed_predictions": [
+            {
+                "cost": task.cost,
+                "fh": int(task.params.split("__")[1]) if "__" in task.params else 0,
+                "model": (
+                    task.params.split("__")[0] if "__" in task.params else task.params
+                ),
+                "time": task.updated_at,
+                "task_id": task.id,
+            }
+            for task in failed_tasks
+        ],
+        "in_progress_predictions": [
+            {
+                "cost": task.cost,
+                "fh": int(task.params.split("__")[1]) if "__" in task.params else 0,
+                "model": (
+                    task.params.split("__")[0] if "__" in task.params else task.params
+                ),
+                "time": task.updated_at,
+                "task_id": task.id,
+            }
+            for task in in_progress_tasks
+        ],
+    }
+
+
+@app.get("/forecast_data/{forecast_id}")
+async def get_forecast_data_endpoint(
+    forecast_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    forecast = await get_forecast_by_id(db, forecast_id)
+    if not forecast:
+        raise HTTPException(status_code=404, detail="Forecast not found")
+
+    return {
+        "id": forecast.id,
+        "model": forecast.model,
+        "fh": forecast.fh,
+        "data": forecast.data,
+        "created_at": forecast.created_at,
     }
 
 
