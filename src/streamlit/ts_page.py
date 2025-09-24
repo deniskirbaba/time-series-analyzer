@@ -6,8 +6,16 @@ import pandas as pd
 from api_calls import (
     get_all_models,
     get_analysis_task_status,
+    get_forecast_task_status,
     get_time_series,
+    get_user_info,
     start_analysis_task,
+)
+from prediction_tabs import (
+    show_current_predictions,
+    show_failed_predictions,
+    show_order_prediction_form,
+    show_prediction_history,
 )
 
 import streamlit as st
@@ -313,6 +321,7 @@ st.subheader("Прогнозирование")
 with st.expander("Информация о прогнозировании", expanded=False):
     with open("../data/time_series_forecasting_info.txt", "r") as f:
         st.markdown(f.read())
+
 with st.expander("Доступные модели и тарифы", expanded=False):
     models_data = get_all_models(st.session_state.access_token)
     if models_data:
@@ -331,3 +340,31 @@ with st.expander("Доступные модели и тарифы", expanded=Fal
                 st.metric("FH=50", f"{model['tariffs'] * 50:.2f} ₽")
     else:
         st.error("Не удалось загрузить информацию о моделях")
+
+user_info = get_user_info(st.session_state.access_token)
+user_balance = user_info.get("balance", 0.0) if user_info else 0.0
+
+forecast_status = get_forecast_task_status(st.session_state.access_token, ts_id)
+
+if forecast_status:
+    forecast_tab1, forecast_tab2, forecast_tab3, forecast_tab4 = st.tabs(
+        [
+            "Текущие прогнозы",
+            "История прогнозов",
+            "Неудачные прогнозы",
+            "Заказать прогноз",
+        ]
+    )
+
+    with forecast_tab1:
+        show_current_predictions(forecast_status.get("in_progress_predictions", []))
+    with forecast_tab2:
+        show_prediction_history(
+            forecast_status.get("successful_predictions", []), ts_data
+        )
+    with forecast_tab3:
+        show_failed_predictions(forecast_status.get("failed_predictions", []))
+    with forecast_tab4:
+        show_order_prediction_form(ts_id, user_balance)
+else:
+    st.error("Не удалось загрузить статус прогнозирования")

@@ -168,3 +168,45 @@ def start_analysis_task(access_token: str, ts_id: int) -> dict | None:
             return None
     except requests.exceptions.RequestException:
         return None
+
+
+def get_forecast_task_status(access_token: str, ts_id: int) -> dict | None:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(
+            f"{BACKEND_URL}/forecast_task_status/{ts_id}", headers=headers
+        )
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except requests.exceptions.RequestException:
+        return None
+
+
+def get_forecast_data(access_token: str, forecast_id: int) -> dict | None:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        response = requests.get(
+            f"{BACKEND_URL}/forecast_data/{forecast_id}", headers=headers
+        )
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except requests.exceptions.RequestException:
+        return None
+
+
+def create_forecast_task(
+    access_token: str, ts_id: int, model: str, fh: int, cost: float
+) -> tuple[bool, dict | str]:
+    try:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        params = {"ts_id": ts_id, "model": model, "fh": fh, "cost": cost}
+        response = requests.post(
+            f"{BACKEND_URL}/forecast_time_series", headers=headers, params=params
+        )
+        return response.status_code == 200, (
+            response.json() if response.status_code == 200 else response.text
+        )
+    except requests.exceptions.RequestException as e:
+        return False, str(e)
