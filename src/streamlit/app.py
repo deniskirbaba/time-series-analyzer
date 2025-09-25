@@ -17,12 +17,13 @@ login_page = st.Page("login_page.py", title="Вход")
 register_page = st.Page("register_page.py", title="Регистрация")
 im_page = st.Page("im_page.py", title="Личный кабинет")
 ts_page = st.Page("ts_page.py", title="Анализ/Предсказание")
+ts_loader_page = st.Page("ts_loader_page.py", title="Загрузка")
 
 pg = st.navigation(
     {
         "Авторизация": [login_page, register_page],
         "Аккаунт": [im_page],
-        "Временные ряды": [ts_page],
+        "Временные ряды": [ts_page, ts_loader_page],
     }
 )
 
