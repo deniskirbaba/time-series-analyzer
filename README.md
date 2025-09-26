@@ -24,9 +24,22 @@
 
 ## Демо
 
-TODO
+[Видео демо](https://drive.google.com/file/d/12rb2mLIYOxuIMqI7xsYpA5vcsaAkGEuI/view?usp=sharing)
 
-Сюда вставить скриншоты интерфейса, баз данных, а также ссылку на видео-демо.
+![](./demos/1.png)
+![](./demos/2.png)
+![](./demos/3.png)
+![](./demos/4.png)
+![](./demos/5.png)
+![](./demos/6.png)
+![](./demos/7.png)
+![](./demos/8.png)
+![](./demos/9.png)
+![](./demos/10.png)
+![](./demos/11.png)
+![](./demos/12.png)
+![](./demos/13.png)
+
 
 ## Компоненты системы
 
